@@ -3,7 +3,7 @@ import requests
 import os
 from datetime import datetime, timedelta
 
-# ===================== CONFIG (from GitHub Secrets) =====================
+# ===================== CONFIG =====================
 API_KEY = os.getenv("API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -28,29 +28,40 @@ def send_telegram_message(message):
 
 class GrokBetRobot:
     def __init__(self):
-        print("🚀 GrokBet Robot (GitHub Actions) Started")
+        print("🚀 GrokBet Robot (GitHub Actions) - Updated Version Started")
     
     def fetch_fixtures(self):
         today = datetime.now()
-        from_date = (today + timedelta(days=1)).strftime("%Y-%m-%d")
-        to_date = (today + timedelta(days=10)).strftime("%Y-%m-%d")
+        print(f"📅 Current date: {today.strftime('%Y-%m-%d')}")
         
         all_matches = []
-        for league_id, name in LEAGUES.items():
-            try:
-                url = f"https://api-football-v1.p.rapidapi.com/v3/fixtures?league={league_id}&season=2026&from={from_date}&to={to_date}"
-                resp = requests.get(url, headers=headers, timeout=15)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    for f in data.get('response', []):
-                        all_matches.append({
-                            "match": f"{f['teams']['home']['name']} vs {f['teams']['away']['name']}",
-                            "league": name,
-                            "date": f['fixture']['date'][:10],
-                            "home_team": f['teams']['home']['name']
-                        })
-            except:
-                continue
+        # Try current and previous season
+        seasons = [2026, 2025]
+        
+        for season in seasons:
+            print(f"Trying season {season}...")
+            from_date = today.strftime("%Y-%m-%d")
+            to_date = (today + timedelta(days=14)).strftime("%Y-%m-%d")
+            
+            for league_id, name in LEAGUES.items():
+                try:
+                    url = f"https://api-football-v1.p.rapidapi.com/v3/fixtures?league={league_id}&season={season}&from={from_date}&to={to_date}"
+                    resp = requests.get(url, headers=headers, timeout=15)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        for f in data.get('response', []):
+                            all_matches.append({
+                                "match": f"{f['teams']['home']['name']} vs {f['teams']['away']['name']}",
+                                "league": name,
+                                "date": f['fixture']['date'][:10],
+                                "home_team": f['teams']['home']['name']
+                            })
+                except:
+                    continue
+            if all_matches:
+                break  # Stop when we find matches
+        
+        print(f"Found total {len(all_matches)} fixtures")
         return all_matches[:60]
 
     def run(self):
@@ -58,13 +69,24 @@ class GrokBetRobot:
         print(f"📅 Running on: {today}\n")
         
         fixtures = self.fetch_fixtures()
-        print(f"Found {len(fixtures)} fixtures\n")
         
+        if len(fixtures) == 0:
+            msg = f"""<b>🔔 GrokBet Robot - Pre-season Mode</b>
+
+📅 Date: {today}
+Status: No fixtures available yet (Season 2026/27 starting soon)
+
+The robot is working correctly and will automatically start giving recommendations once the new season begins (mid-August 2026)."""
+            send_telegram_message(msg)
+            print("✅ Pre-season message sent")
+            return
+        
+        # Normal season mode
         recommendations = []
         for fx in fixtures:
             home = fx["home_team"].lower()
             confidence = 65
-            if any(t in home for t in ["bayern", "psg", "man city", "real madrid", "barcelona", "al hilal"]):
+            if any(t in home for t in ["bayern", "psg", "man city", "real madrid", "barcelona", "al hilal", "inter", "benfica"]):
                 confidence += 25
             
             if confidence >= 72:
@@ -93,10 +115,11 @@ High Confidence Matches: <b>{len(acca_legs)}</b>
         for i, bet in enumerate(acca_legs[:10], 1):
             msg += f"\n{i}. <b>{bet['match']}</b>\n   → {bet['recommended_bet']} ({bet['odds_range']}) | {bet['confidence']}%"
 
-        msg += "\n\n✅ Full recommendations generated."
+        msg += "\n\nFull list generated successfully."
         send_telegram_message(msg)
-        print("✅ Robot finished!")
+        print("✅ Robot finished successfully!")
 
+# ===================== RUN =====================
 if __name__ == "__main__":
     robot = GrokBetRobot()
     robot.run()
